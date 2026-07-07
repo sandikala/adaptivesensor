@@ -1,0 +1,147 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+
+# ==========================================
+# 1. DATA LOADING & PREPROCESSING
+# ==========================================
+file_path = 'air_data (1).csv'
+try:
+    df = pd.read_csv(file_path, delimiter=';')
+except FileNotFoundError:
+    print("Error: File not found. Please upload 'air_data (1).csv' to Colab.")
+    dates = pd.date_range(start='2025-07-31', periods=100, freq='T')
+    df = pd.DataFrame({
+        'date': dates,
+        'pm2_5': np.random.uniform(10, 50, 100).astype(str),
+        'battery_voltage': np.random.uniform(3.5, 4.2, 100).astype(str)
+    })
+
+def parse_comma_float(x):
+    try:
+        return float(x.replace(',', '.')) if isinstance(x, str) else float(x)
+    except:
+        return 0.0
+
+target_cols = ['pm2_5', 'pm10', 'battery_voltage']
+for col in target_cols:
+    if col in df.columns:
+        df[f'{col}_float'] = df[col].apply(parse_comma_float)
+
+try:
+    df['datetime'] = pd.to_datetime(df['date'], format='%d/%m/%y %H.%M', errors='coerce')
+except:
+    df['datetime'] = pd.to_datetime(df['date'], errors='coerce')
+
+df = df.sort_values('datetime').reset_index(drop=True)
+
+# ==========================================
+# 2. SIMULATION: OPTIMIZED SENSOR SELECTION
+# ==========================================
+threshold_pm25 = 2.0
+last_val = -999
+selected_indices = []
+
+for i, row in df.iterrows():
+    current_val = row['pm2_5_float']
+    if abs(current_val - last_val) > threshold_pm25:
+        selected_indices.append(i)
+        last_val = current_val
+
+df_optimized = df.loc[selected_indices].copy()
+
+total_packets_raw = len(df)
+total_packets_opt = len(df_optimized)
+reduction_ratio = (1 - total_packets_opt / total_packets_raw) * 100
+
+# ==========================================
+# 3. SIMULATION: COMPUTATION LATENCY
+# ==========================================
+cost_standard_he = 50
+cost_lightweight_he = 5
+cost_transmission = 20
+
+latency_baseline = total_packets_raw * (cost_standard_he + cost_transmission)
+latency_proposed = total_packets_opt * (cost_lightweight_he + cost_transmission)
+speedup = latency_baseline / latency_proposed
+
+# ==========================================
+# 4. VISUALIZATION (LEGEND FIX)
+# ==========================================
+plt.style.use('default')
+plt.rcParams.update({
+    'font.family': 'serif',
+    'font.size': 11,
+    'axes.labelsize': 12,
+    'axes.titlesize': 13,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'legend.fontsize': 11,
+})
+
+# Tambahkan tinggi figsize sedikit agar legend bawah muat
+fig, axes = plt.subplots(1, 3, figsize=(16, 6))
+
+# --- KONFIGURASI PALET WARNA ---
+color_baseline = '#d62728' # Merah
+color_proposed = '#1f77b4' # Biru
+color_raw = '#7f7f7f'      # Abu-abu
+colors = [color_baseline, color_proposed]
+edge_color = 'black'
+linewidth = 1.0
+
+# --- Graph 1: Bandwidth Reduction ---
+bars1 = axes[0].bar(['Baseline\n(Raw Data)', 'Proposed\n(Optimized)'],
+                    [total_packets_raw, total_packets_opt],
+                    color=colors, edgecolor=edge_color, linewidth=linewidth, width=0.5)
+bars1[0].set_alpha(0.8)
+bars1[1].set_alpha(0.9)
+
+axes[0].set_title('(a) Data Volume Reduction', fontweight='bold', pad=10)
+axes[0].set_ylabel('Number of Transmitted Packets')
+axes[0].grid(axis='y', linestyle='--', alpha=0.5)
+axes[0].text(1, total_packets_opt + (total_packets_raw*0.05), f"-{reduction_ratio:.1f}%",
+             ha='center', fontsize=12, fontweight='bold', color=color_proposed)
+
+# --- Graph 2: Latency Comparison ---
+bars2 = axes[1].bar(['Standard HE\n(Baseline)', 'Proposed\nFramework'],
+                    [latency_baseline / 1000, latency_proposed / 1000],
+                    color=colors, edgecolor=edge_color, linewidth=linewidth, width=0.5)
+
+axes[1].set_title('(b) Processing & Transmission Latency', fontweight='bold', pad=10)
+axes[1].set_ylabel('Time (Seconds)')
+axes[1].grid(axis='y', linestyle='--', alpha=0.5)
+axes[1].text(1, (latency_proposed/1000) + (latency_baseline/1000*0.05), f"{speedup:.1f}x Faster",
+             ha='center', fontsize=12, fontweight='bold', color=color_proposed)
+
+# --- Graph 3: Data Utility (LEGEND FIXED) ---
+axes[2].plot(df['datetime'], df['pm2_5_float'], label='Raw Sensor Data',
+             color=color_raw, alpha=0.5, linestyle='-', linewidth=1.5)
+
+axes[2].plot(df_optimized['datetime'], df_optimized['pm2_5_float'], label='Reconstructed (Opt.)',
+             color=color_proposed, marker='o', markersize=4, linestyle='', alpha=0.9)
+
+axes[2].set_title('(c) Data Utility: Signal Reconstruction', fontweight='bold', pad=10)
+axes[2].set_ylabel('PM 2.5 Concentration')
+axes[2].grid(axis='both', linestyle='--', alpha=0.5)
+axes[2].tick_params(axis='x', rotation=45)
+
+# --- PERBAIKAN POSISI LEGEND ---
+# Legend diletakkan DI BAWAH grafik (outside bottom)
+axes[2].legend(loc='upper center', bbox_to_anchor=(0.5, -0.25),
+               ncol=1, frameon=False, edgecolor='black')
+
+plt.tight_layout()
+
+# --- EXPORT ---
+plt.savefig('System_Impact_Color_Fixed.svg', format='svg', bbox_inches='tight')
+plt.savefig('System_Impact_Color_Fixed.pdf', format='pdf', bbox_inches='tight')
+
+plt.show()
+
+print("\n=========================================================")
+print("File 'System_Impact_Color_Fixed.svg' telah diperbaiki.")
+print("Legenda plot (c) sekarang berada di bawah grafik dan tidak menutupi data.")
+print("=========================================================")
